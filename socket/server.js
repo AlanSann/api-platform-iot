@@ -210,7 +210,33 @@ function publishDataToTopic(client, topic, message) {
   });
 }
 
+function sendCommandXbee(command, parameter) {
+  const frame = {
+    type: 0x17, // Type de trame de commande à distance (AT Remote Command Request)
+    id: 0x01,   // ID de la trame (peut être n'importe quoi)
+    destination64: '0013A20012345678', // Adresse 64 bits du module XBee distant
+    command: command, // Commande à exécuter sur le module XBee distant
+    commandParameter: parameter // Paramètre de la commande (peut être null)
+  };
+
+  serialport.write(xbeeAPI.buildFrame(frame));
+}
+
+// Exemple : envoyer la commande 'X10' avec le paramètre 'data' au module XBee distant
+sendCommandXbee('X10', 'data');
+
 // Exemple d'utilisation de la fonction getUser
 user = getUser(uid);
 
+function sendCommandToArduinoXbee(data) {
+  const frame = {
+    type: 0x10,
+    destination64: "0013A20041A7133C",
+    data: data,
+  }
 
+  serialport.write(xbeeAPI.buildFrame(frame));
+  console.log("Commande envoyée à l'Arduino = " + data + "\n");
+}
+
+sendCommandToArduinoXbee('STOP_MOTION_SENSORy');
