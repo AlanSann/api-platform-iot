@@ -31,6 +31,7 @@ let valeurAD1;
 let valeurDIO3;
 let dataReceived;
 let user;
+let laserState = true;
 const uid = "dru7DyoWEkTX17twZP9f49O18ED3";
 let movedDetected = false;
 
@@ -103,6 +104,10 @@ function handleXBeeData(frame) {
     handleDIO3Value(frame);
   }
 
+  if (C.FRAME_TYPE.ZIGBEE_IO_DATA_SAMPLE_RX === frame.type) {
+    handleD0Value(frame);
+  }
+
 
 }
 
@@ -116,10 +121,10 @@ async function handleZigbeeReceivePacket(frame) {
 
     switch (dataReceived) {
       case "MOTION_DETECTED":
-        publishDataToTopic(client, "object", "Il y a quelqu'un !");
+        publishDataToTopic(client, "object", "Il y a quelqu'un !", null, "Détection de mouvement");
         if (user.alarmState) {
           console.log("Alarme activée");
-          publishDataToTopic(client, "object", "Mouvement détecté !");
+          publishDataToTopic(client, "object", "Mouvement détecté !", null, "Détection de mouvement");
         }
         break;
       default:
@@ -133,11 +138,14 @@ async function handleZigbeeReceivePacket(frame) {
 
         const storedPinCode = user.pin;
 
-        checkPinCode(dataReceived, storedPinCode);
+        // Attendre la résolution de la promesse getUser avant de traiter le code PIN
+        const resolvedPinCode = await storedPinCode;
 
-        console.log("Après checkPinCode");
+        checkPinCode(dataReceived, resolvedPinCode);
 
-        publishDataToTopic(client, "object", "Mouvement détecté !");
+
+        // Afficher un message dans la console sans inclure le code PIN dans le message MQTT
+        console.log("Code PIN vérifié. Message envoyé.");
         console.log("Code ");
         console.log(dataReceived);
         break;
@@ -146,6 +154,9 @@ async function handleZigbeeReceivePacket(frame) {
     console.error("Erreur lors de la gestion de la réception Zigbee:", error);
   }
 }
+
+
+
 
 async function checkPinCode(pinCode, storedPinCode) {
   try {
@@ -157,14 +168,17 @@ async function checkPinCode(pinCode, storedPinCode) {
     console.log("Code PIN stocké :", storedPinCode);
 
     if (isPinCorrect) {
-      console.log("Le code PIN est correct. Désactivation du laser et du capteur.");
+      console.log("Le code PIN est correct. Désactivation du capteur.");
       sendCommandToArduinoXbee('STOP_MOTION_SENSORy');
+      publishDataToTopic(client, "object", "Code envoyé correcte !");
       // Ajoutez ici le code pour désactiver le laser et le capteur
     } else {
       console.log("Le code PIN est incorrect. Aucune action effectuée.");
+      publishDataToTopic(client, "object", "Code envoyé incorrecte !");
       // Aucune action à effectuer pour le cas où le code PIN est incorrect
     }
 
+    checkPinResult = isPinCorrect;
     return isPinCorrect;
   } catch (error) {
     console.error("Erreur lors de la vérification du code PIN:", error);
@@ -185,16 +199,36 @@ function handleAD1Value(frame) {
       command: "D0",
       commandParameter: valeurAD1 >= 10 && valeurAD1 <= 70 ? [0x05] : [0x04],
     };
-
-    console.log(
-      valeurAD1 >= 20 && valeurAD1 <= 40
-        ? "Rien à signaler !"
-        : "Intrusion ! Lumière allumée !"
-    );
+    if (valeurAD1 >= 10 && valeurAD1 <= 70) {
+    } else {
+      publishDataToTopic(client, "object", "Intrusion ! Porte d'entrée");
+    }
     sendRemoteCommand(remoteCommand);
   }
 
 }
+
+function handleD0Value(frame) {
+  if (frame.digitalSamples && frame.digitalSamples.D0 !== undefined) {
+    valeurD0 = frame.digitalSamples.D0;
+
+    const remoteCommand = {
+      type: C.FRAME_TYPE.REMOTE_AT_COMMAND_REQUEST,
+      destination64: "0013A20041C34AA8",
+      command: "D0",
+      commandParameter: isPinCorrect ? [valeurD0 === 1 ? 0x05 : 0x04] : [], // Activer ou désactiver D0 en fonction de la valeur
+    };
+
+    sendRemoteCommand(remoteCommand);
+
+    if (isPinCorrect && valeurD0 === 1) {
+      console.log("Le code PIN est correct. Allumer le laser.");
+      // Ajoutez ici le code pour indiquer que le laser est allumé
+    }
+  }
+}
+
+
 
 // Gestion de la valeur D3
 function handleDIO3Value(frame) {
@@ -218,20 +252,15 @@ function handleMQTTConnect() {
     if (!err) {
       console.log('Abonné au sujet (topic) "object"');
     }
-    setInterval(() => {
-      console.log(user);
-      if (dataReceived !== undefined) {
-        // publishDataToTopic(client, 'object', dataReceived);
-      } else {
-        console.log("Pas de valeur du digicode");
-        // publishDataToTopic(client, "object", "Pas de valeur du digicode");
-      }
-    }, 7000);
   });
 }
 
 // Fonction pour gérer les messages MQTT
 function handleMQTTMessage(topic, message) {
+  if (message.toString() === "ACTIVE") {
+    console.log("Activation du capteur de mouvement");
+    sendCommandToArduinoXbee('START_MOTION_SENSORy');
+  }
   console.log(
     `Message reçu du sujet (topic) "${topic}": ${message.toString()}`
   );
@@ -247,6 +276,9 @@ function publishDataToTopic(client, topic, message) {
     }
   });
 }
+
+
+
 
 function sendCommandXbee(command, parameter) {
   const frame = {
