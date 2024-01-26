@@ -17,8 +17,9 @@ async function getUser(uid) {
     // Vérifier si le document existe dans Firestore
     if (userSnapshot.exists) {
       console.log("Utilisateur existant dans Firestore");
-      console.log(userSnapshot.data());
-      return userSnapshot.data();
+      const userData = userSnapshot.data();
+      console.log(userData); // Log the retrieved data
+      return userData;
     } else {
       console.log("Création en cours...");
       return await createUser(uid);

@@ -107,33 +107,71 @@ function handleXBeeData(frame) {
 }
 
 // Gestion des paquets Zigbee Receive
-function handleZigbeeReceivePacket(frame) {
-  let dataReceived = "";
-  for (let i = 0; i < frame.data.length; i++) {
-    dataReceived += String.fromCharCode(frame.data[i]);
-  }
-  dataReceived = dataReceived.trim();
-  console.log(">> ZIGBEE_RECEIVE_PACKET >", dataReceived);
+// Gestion des paquets Zigbee Receive
+async function handleZigbeeReceivePacket(frame) {
+  try {
+    let dataReceived = frame.data.toString('utf-8').trim();  // Convert buffer to string and trim whitespace
 
-  switch (dataReceived) {
-    case "MOTION_DETECTED":
-      publishDataToTopic(client, "object", "Il y a quelqu'un !");
-      if (user.alarmState) {
-        console.log("Alarme activée");
-        movedDetected = true;
-        publishDataToTopic(client, "object", "Mouvement détecté !");
-      }
-      break;
-    default:
-      if (user.alarmState && movedDetected) {
+    console.log(">> ZIGBEE_RECEIVE_PACKET >", dataReceived);
+
+    switch (dataReceived) {
+      case "MOTION_DETECTED":
+        publishDataToTopic(client, "object", "Il y a quelqu'un !");
+        if (user.alarmState) {
+          console.log("Alarme activée");
+          publishDataToTopic(client, "object", "Mouvement détecté !");
+        }
+        break;
+      default:
         console.log("Code reçu :", dataReceived);
-        movedDetected = true;
+        // Vérifier le code PIN
+        console.log("Avant checkPinCode");
+        console.log(dataReceived);
+
+        // Fetch the user data from Firestore
+        user = await getUser(uid);
+
+        const storedPinCode = user.pin;
+
+        checkPinCode(dataReceived, storedPinCode);
+
+        console.log("Après checkPinCode");
+
         publishDataToTopic(client, "object", "Mouvement détecté !");
-      }
-      console.log("Code ");
-      console.log(dataReceived);
+        console.log("Code ");
+        console.log(dataReceived);
+        break;
+    }
+  } catch (error) {
+    console.error("Erreur lors de la gestion de la réception Zigbee:", error);
   }
 }
+
+async function checkPinCode(pinCode, storedPinCode) {
+  try {
+    console.log("Début de la vérification du code PIN");
+
+    const isPinCorrect = String(pinCode) === String(storedPinCode);
+
+    console.log("Code PIN saisi :", pinCode);
+    console.log("Code PIN stocké :", storedPinCode);
+
+    if (isPinCorrect) {
+      console.log("Le code PIN est correct. Désactivation du laser et du capteur.");
+      sendCommandToArduinoXbee('STOP_MOTION_SENSORy');
+      // Ajoutez ici le code pour désactiver le laser et le capteur
+    } else {
+      console.log("Le code PIN est incorrect. Aucune action effectuée.");
+      // Aucune action à effectuer pour le cas où le code PIN est incorrect
+    }
+
+    return isPinCorrect;
+  } catch (error) {
+    console.error("Erreur lors de la vérification du code PIN:", error);
+    return false;
+  }
+}
+
 
 // Gestion de la valeur AD1
 function handleAD1Value(frame) {
@@ -239,4 +277,4 @@ function sendCommandToArduinoXbee(data) {
   console.log("Commande envoyée à l'Arduino = " + data + "\n");
 }
 
-sendCommandToArduinoXbee('STOP_MOTION_SENSORy');
+//sendCommandToArduinoXbee('STOP_MOTION_SENSORy');
